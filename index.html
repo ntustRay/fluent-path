@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123e39">
+  <meta name="description" content="在 FluentPath 的英文學習地圖，每次用五題練文法、單字、多益與聽力。隨選查字、記筆記，回頭練熟錯題。">
+  <title>FluentPath｜英文學習地圖</title>
+  <link rel="icon" href="./assets/fox.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">跳到學習內容</a>
+  <header class="top"><div class="shell top-inner">
+    <a class="brand" href="#map" aria-label="FluentPath 首頁"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>FluentPath</a>
+    <nav aria-label="主要導覽" id="nav"></nav>
+    <div id="player" class="player"></div>
+  </div></header>
+  <main class="shell" id="main" tabindex="-1"><p class="loading">正在打開學習地圖…</p></main>
+  <footer class="shell footer"><span>FluentPath</span><button data-do="sources">教材與資料來源</button></footer>
+  <dialog id="panel" aria-labelledby="panel-title"><div id="panel-body"></div></dialog>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

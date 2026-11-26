@@ -1,5 +1,5 @@
 // Stable question IDs keep saved mistakes and notes attached to the same exercise.
-function lesson(id, track, title, summary, level, guide, rows) {
+export function lesson(id, track, title, summary, level, guide, rows) {
   return {
     id, track, title, summary, level, guide,
     questions: rows.map(([key, prompt, choices, answer, explanation, transcript]) => ({

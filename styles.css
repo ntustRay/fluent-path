@@ -228,20 +228,6 @@ p {
   justify-content: space-between;
   padding: 34px 0 23px;
 }
-.game-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 0.73rem;
-  font-weight: 850;
-  letter-spacing: 0.13em;
-  color: #487664;
-  margin-bottom: 5px;
-}
-.game-label svg {
-  width: 15px;
-  height: 15px;
-}
 .home-intro p,
 .sub {
   margin-top: 6px;
@@ -271,7 +257,7 @@ p {
 }
 .hero {
   display: grid;
-  grid-template-columns: 38% 62%;
+  grid-template-columns: 48% 52%;
   min-height: 236px;
   border: 2px solid #1d4739;
   border-radius: 16px;
@@ -285,7 +271,7 @@ p {
   align-items: flex-start;
   justify-content: center;
   color: #fffcde;
-  padding: 25px 0 25px clamp(25px, 3.5vw, 52px);
+  padding: 25px clamp(20px, 3.5vw, 52px);
   position: relative;
   z-index: 1;
 }
@@ -302,7 +288,7 @@ p {
   height: 17px;
 }
 .hero h2 {
-  font-size: clamp(2.1rem, 3.2vw, 3.3rem);
+  font-size: clamp(1.85rem, 3.1vw, 2.9rem);
   margin: 6px 0 2px;
   letter-spacing: -0.045em;
 }
@@ -445,14 +431,6 @@ p {
   height: 42px;
   object-fit: contain;
 }
-.course-meta {
-  font-size: 0.76rem;
-  font-weight: 750;
-  color: var(--muted);
-  background: #f2f5ed;
-  padding: 4px 8px;
-  border-radius: 6px;
-}
 .course h3 {
   font-size: 1.26rem;
 }
@@ -540,20 +518,6 @@ p {
   margin-left: auto;
   font-size: 0.83rem;
   color: var(--muted);
-}
-.task-check {
-  width: 17px;
-  height: 17px;
-  border: 1.5px solid #a6b9a9;
-  border-radius: 5px;
-}
-.task-check.done {
-  background: #317251;
-  color: white;
-}
-.task-check svg {
-  width: 15px;
-  height: 15px;
 }
 .side-link {
   display: flex;
@@ -1028,9 +992,6 @@ main:focus {
   .home-intro {
     padding: 20px 0 15px;
   }
-  .game-label {
-    font-size: 0.68rem;
-  }
   .home-intro h1 {
     font-size: 1.95rem;
   }
@@ -1042,7 +1003,7 @@ main:focus {
     font-size: 0.8rem;
   }
   .hero {
-    grid-template-columns: 43% 57%;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
     min-height: 198px;
   }
   .hero-copy {
@@ -1074,10 +1035,6 @@ main:focus {
   }
   .course {
     padding: 12px;
-  }
-  .course-meta {
-    font-size: 0.7rem;
-    padding: 3px 5px;
   }
   .course h3 {
     font-size: 1.12rem;
@@ -1124,14 +1081,11 @@ main:focus {
   .shell {
     width: calc(100% - 22px);
   }
-  .course-meta {
-    display: none;
-  }
   .lang {
     display: none;
   }
   .hero-copy {
-    padding: 14px 9px 14px 13px;
+    padding: 15px 11px 15px 14px;
   }
   .hero h2 {
     font-size: 1.65rem;
@@ -1140,7 +1094,12 @@ main:focus {
     font-size: 0.78rem;
   }
   .top nav a {
-    gap: 5px;
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .top nav svg {
+    width: 17px;
+    height: 17px;
   }
   .level {
     display: none;
@@ -1157,6 +1116,220 @@ main:focus {
   }
   .streak small {
     font-size: 0.8rem;
+  }
+}
+.work-dashboard {
+  grid-template-areas: "topics progress" "foundation progress";
+  align-items: start;
+}
+.work-courses {
+  grid-area: topics;
+}
+.work-dashboard aside {
+  grid-area: progress;
+}
+.foundation-courses {
+  grid-area: foundation;
+}
+.work-tiles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.work-tiles .course {
+  display: flex;
+  flex-direction: column;
+}
+.work-tiles .course-status {
+  padding-top: 12px;
+  margin-top: auto;
+}
+.tile-icon > svg {
+  width: 26px;
+  height: 26px;
+}
+.hero .button {
+  min-height: 44px;
+  text-align: center;
+}
+.top nav a {
+  min-height: 44px;
+  white-space: nowrap;
+}
+.daily .bar {
+  margin-top: 8px;
+}
+.daily-shortcut {
+  margin-top: 14px;
+}
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.footer-actions a {
+  padding: 0.53rem 0.8rem;
+  font-size: inherit;
+}
+.phrase-library {
+  display: grid;
+  gap: 14px;
+}
+.phrase-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  margin: 20px 0 8px;
+}
+.phrase-tools label,
+.settings label {
+  display: grid;
+  gap: 6px;
+  font-weight: 700;
+}
+.phrase-tools input,
+.phrase-tools select {
+  min-width: 0;
+  width: 100%;
+}
+#phrase-count {
+  margin-bottom: 12px;
+}
+.phrase-list {
+  margin: 14px 0;
+}
+.phrase-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+.phrase-row p {
+  color: var(--muted);
+  margin-top: 2px;
+}
+.phrase-row .phrase-example {
+  color: var(--ink);
+  margin-top: 5px;
+}
+.phrase-row .icon-btn {
+  width: 44px;
+  height: 44px;
+  color: var(--green);
+}
+.phrase-row[hidden] {
+  display: none;
+}
+.writing-prompt {
+  display: block;
+  font-weight: 700;
+  line-height: 1.65;
+  margin-bottom: 10px;
+}
+#writing-answer {
+  width: 100%;
+  line-height: 1.55;
+}
+.answer-example,
+.review-answer,
+.listen-transcript {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+.answer-example summary,
+.review-answer summary,
+.listen-transcript summary {
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 700;
+}
+.answer-example p,
+.review-answer p,
+.listen-transcript p {
+  margin: 8px 0 0;
+}
+.answer-example .button {
+  margin-top: 8px;
+}
+.review-list p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.settings > .study-card {
+  margin-top: 14px;
+}
+.settings .study-card > p {
+  margin: 8px 0 12px;
+}
+.settings label {
+  margin: 12px 0 6px;
+}
+.settings select,
+.settings input[type="time"] {
+  min-height: 44px;
+}
+.study-history {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+.study-history caption {
+  text-align: left;
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-bottom: 7px;
+}
+.study-history th,
+.study-history td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.study-history th[scope="row"] {
+  font-weight: 500;
+}
+@media (max-width: 720px) {
+  .foundation-courses {
+    margin-top: 24px;
+  }
+  .hero h2 {
+    font-size: clamp(1.45rem, 6.7vw, 1.9rem);
+  }
+}
+@media (max-width: 560px) {
+  .work-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .work-tiles .course {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "icon title status" "icon desc status" ". bar bar";
+    column-gap: 10px;
+    align-items: center;
+  }
+  .work-tiles .course-top {
+    grid-area: icon;
+    margin: 0;
+  }
+  .work-tiles h3 {
+    grid-area: title;
+  }
+  .work-tiles p {
+    grid-area: desc;
+  }
+  .work-tiles .course-status {
+    grid-area: status;
+    padding-top: 0;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .work-tiles .bar {
+    grid-area: bar;
+    margin-top: 8px;
+  }
+  .phrase-tools {
+    grid-template-columns: 1fr;
   }
 }
 @media (prefers-reduced-motion: reduce) {

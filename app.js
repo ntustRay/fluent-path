@@ -1,4 +1,5 @@
-import { lessons } from "./data/lessons.js";
+import { lessons as foundationLessons } from "./data/lessons.js";
+import { workLessons, workTracks } from "./data/work.js";
 import { speak, stopSpeaking } from "./speech.js";
 import {
   readState,
@@ -8,13 +9,21 @@ import {
   vocabularyQuestion,
   grade,
   advance,
+  dailyPractice,
+  reviewQueue,
+  validReminderTime,
+  learningCalendar,
+  backupText,
+  restoreBackup,
 } from "./model.js";
 
 const $ = (selector) => document.querySelector(selector);
 const main = $("#main");
 const dialog = $("#panel");
 const state = readState();
+const lessons = [...workLessons, ...foundationLessons];
 const tracks = {
+  ...workTracks,
   grammar: {
     title: "文法森林",
     type: "文法",
@@ -41,6 +50,10 @@ const tracks = {
   },
 };
 const paths = {
+  meeting: '<path d="M5 3h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-7l-6 4v-4H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM7 8h10m-10 4h7"/>',
+  spark: '<path d="M12 2c0 6 4 10 10 10-6 0-10 4-10 10 0-6-4-10-10-10 6 0 10-4 10-10z"/>',
+  code: '<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-2-15-4 18"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12a2 2 0 0 0 4 0"/>',
   map: '<path d="m3 5 6-2 6 2 6-2v16l-6 2-6-2-6 2zM9 3v16m6-14v16"/>',
   review: '<path d="M3 10a9 9 0 1 1 1 7m-1-7V4m0 6h6M12 7v5l3 2"/>',
   notes:
@@ -90,7 +103,9 @@ let chosen = null,
   currentNote = null,
   lastSelection = "",
   noticeTimer;
-const routes = { map: "學習地圖", review: "錯題回顧", notes: "我的筆記" };
+const routes = { map: "練習", review: "錯題", library: "教材", notes: "筆記" };
+const focusOptions = { mixed: "三類輪練", ...Object.fromEntries(Object.entries(workTracks).map(([id, track]) => [id, track.title])) };
+let renderedDay;
 const route = () => location.hash.slice(1) || "map";
 function go(where) {
   if (route() === where) render();
@@ -106,24 +121,28 @@ function toast(message) {
 function save() {
   try {
     persist(state);
+    return true;
   } catch {
     if (!saveWarned) toast("瀏覽器無法儲存，這次進度會保留到關閉分頁。");
     saveWarned = true;
+    return false;
   }
 }
-function tile(track, cls = "") {
-  return `<img class="pixel ${cls}" src="./assets/tile-${track}.png" alt="">`;
+function tile(track) {
+  return workTracks[track]
+    ? icon(workTracks[track].icon)
+    : `<img class="pixel" src="./assets/tile-${track}.png" alt="">`;
 }
 function progress(value, max) {
   return `<div class="bar" role="progressbar" aria-label="完成進度" aria-valuemin="0" aria-valuemax="${max}" aria-valuenow="${Math.min(value, max)}"><i style="width:${max ? Math.min(100, (value / max) * 100) : 0}%"></i></div>`;
 }
 function header() {
   const view = route().split("/")[0],
-    nav = routes[view] ? view : "map";
+    nav = routes[view] ? view : view === "settings" ? "" : "map";
   $("#nav").innerHTML = Object.entries(routes)
     .map(
       ([id, name]) =>
-        `<a href="#${id}" ${id === nav ? 'aria-current="page"' : ""}>${icon(id)}<span>${name}</span></a>`,
+        `<a href="#${id}" ${id === nav ? 'aria-current="page"' : ""}>${icon(id === "library" ? "book" : id)}<span>${name}</span></a>`,
     )
     .join("");
   $("#player").innerHTML =
@@ -174,49 +193,59 @@ function findQuestion(id) {
     },
   };
 }
-function nextMission() {
-  if (state.active && !state.active.finished)
-    return {
-      title: state.active.title,
-      track: state.active.track,
-      link: "#play",
-      resume: true,
-    };
-  const next = lessons.find(
-    (l) => l.track === "grammar" && !state.cleared[l.id],
-  );
-  if (next) return { ...next, link: "#lesson/" + next.id };
-  const v = words.findIndex((w) => !state.mastered[w[0]]);
-  if (v >= 0)
-    return {
-      ...vocabLesson(Math.floor(v / 5)),
-      link: "#lesson/vocab-" + Math.floor(v / 5),
-    };
-  const more = lessons.find((l) => !state.cleared[l.id]) || lessons[0];
-  return { ...more, link: "#lesson/" + more.id };
+function courseCard(key) {
+  const track = tracks[key];
+  const total = units(key);
+  const done = completed(key);
+  return `<a class="course ${track.color}" href="#track/${key}">
+    <div class="course-top"><span class="tile-icon">${tile(key)}</span></div>
+    <h3>${esc(track.title)}</h3><p>${esc(track.desc)}</p>
+    <div class="course-status"><span>${key === "vocabulary" ? fmt(words.length) + " 個單字" : "通過 " + done + " / " + total + " 關"}</span>${key === "vocabulary" ? `<b>${total ? Math.round(done / total * 100) : 0}%</b>` : ""}</div>${progress(done, total || 1)}</a>`;
 }
 function home() {
-  const now = nextMission(),
-    track = tracks[now.track],
-    today = state.days[dayKey()] || {},
-    hasReview = Object.keys(state.mistakes).length;
-  const task = (name, n, max) =>
-    `<div class="task-row"><span class="task-check ${n >= max ? "done" : ""}">${n >= max ? icon("check") : ""}</span><span>${name}</span><b>${Math.min(n, max)} / ${max}</b></div>`;
-  return `<section class="home-intro"><div><div class="game-label">${icon("flag")} 冒險者 Lv. ${Math.floor(state.xp / 100) + 1} · 距升級 ${100 - state.xp % 100} XP</div><h1>英文學習地圖</h1><p>每次五題，走一段自己的英文冒險。</p></div><div class="lang"><span class="lang-dot"></span> 英文 <b>EN</b></div></section>
- <section class="hero"><div class="hero-copy"><div class="hero-tag">${icon("flag")} ${now.resume ? "進行中的關卡" : "今日主線"}</div><h2>${esc(track?.title || "錯題回顧")}</h2><p>${esc(now.title)}</p><a href="${esc(now.link)}" class="button gold">${icon("play")} ${now.resume ? "繼續挑戰" : "開始冒險"}</a></div><div class="hero-art"><img class="pixel" src="./assets/hero-landscape.png" alt="背著行囊的小狐狸沿森林小徑前往山頂旗幟"></div></section>
- <div class="dashboard"><section><div class="section-head"><h2>${icon("map")} 冒險區域</h2><span>4 個區域</span></div>
- <div class="tiles">${Object.entries(tracks)
-   .map(([k, t]) => {
-     const total = units(k),
-       done = completed(k);
-     return `<a class="course ${t.color}" href="#track/${k}"><div class="course-top"><div class="tile-icon">${tile(k)}</div><div class="course-meta">${({grammar:"句型與時態",vocabulary:"5 字一關",toeic:"Part 5–7",listening:"可慢速重播"})[k]}</div></div><h3>${esc(t.title)}</h3><p>${esc(t.desc)}</p><div class="course-status"><span>${k === "vocabulary" ? fmt(words.length) + " 個單字" : total + " 個關卡"}</span><b>${total ? Math.round((done / total) * 100) : 0}%</b></div>${progress(done, total || 1)}</a>`;
-   })
-   .join("")}</div></section>
- <aside><div class="section-head"><h2>${icon("target")} 今日任務</h2></div><div class="daily"><div class="streak"><span class="streak-icon">${icon("flame")}</span><div><b>連續學習 ${streak(state)} 天</b><small>今天答一題就能打卡</small></div></div>
- ${task("完成 5 道練習", today.answers || 0, 5)}${task("答對 3 道題目", today.correct || 0, 3)}${task("完成 1 次挑戰", today.rounds || 0, 1)}</div>
- <a href="#review" class="side-link">${icon("review")}<span><b>錯題回顧</b><small>${hasReview ? "有 " + hasReview + " 題等你再挑戰" : "答錯的題目會收在這裡"}</small></span>${icon("chevron")}</a></aside></div>`;
+  const date = new Date();
+  const plan = dailyPractice(state, date);
+  const doing = state.active && !state.active.finished ? state.active : null;
+  const done = plan.answers.length >= plan.ids.length;
+  const next = byQuestion.get(plan.ids[plan.answers.length]);
+  const ready = reviewQueue(state, { date }).filter((id) => findQuestion(id)).length;
+  const title = doing?.title || next?.lesson.title || "今天的練習已完成";
+  const planTracks = [...new Set(plan.ids.map((id) => byQuestion.get(id)?.lesson.track))];
+  const topic = doing && doing.track !== "daily"
+    ? tracks[doing.track]?.title || "錯題回顧"
+    : !doing && done
+      ? "已完成 " + plan.answers.length + " 題"
+      : planTracks.length === 1 ? workTracks[planTracks[0]].title : "工作情境輪練";
+  const showReview = !doing && done && ready;
+  return `<section class="home-intro"><div><h1>工作英文練習</h1><p>從會議、AI 到 Code Review，每天練五題。</p></div><div class="lang"><span class="lang-dot"></span> 英文 <b>EN</b></div></section>
+  <section class="hero" aria-labelledby="daily-title"><div class="hero-copy">
+    <div class="hero-tag">${icon("flag")} ${doing ? "進行中的練習" : "今日練習"}</div>
+    <h2 id="daily-title">${esc(title)}</h2><p>${esc(topic)}</p>
+    ${doing
+      ? `<a href="#play" class="button gold">${icon("play")} 繼續練習</a>`
+      : done
+        ? `<a href="#${showReview ? "review" : "library"}" class="button gold">${showReview ? "複習到期錯題" : "看英文句型"}</a>`
+        : `<button class="button gold" data-do="daily">${icon("play")} ${plan.answers.length ? "繼續今日練習" : "開始今日練習"}</button>`}
+  </div><div class="hero-art"><img class="pixel" src="./assets/hero-landscape.png" alt=""></div></section>
+  <div class="dashboard work-dashboard">
+    <section class="work-courses"><div class="section-head"><h2>工作主題</h2><a class="ext" href="#library">看句型教材</a></div>
+      <div class="tiles work-tiles">${Object.keys(workTracks).map(courseCard).join("")}</div>
+    </section>
+    <aside aria-label="學習進度"><div class="section-head"><h2>今日進度</h2></div>
+      <div class="daily"><div class="streak"><span class="streak-icon">${icon("flame")}</span><div><b>連續學習 ${streak(state)} 天</b><small>作答一題即可打卡</small></div></div>
+        <div class="task-row"><span>每日練習</span><b>${plan.answers.length} / ${plan.ids.length} 題</b></div>
+        ${progress(plan.answers.length, plan.ids.length)}
+        ${doing && doing.track !== "daily" && !done ? '<button class="daily-shortcut" data-do="daily">做今日練習</button>' : ""}
+      </div>
+      <a href="#review" class="side-link">${icon("review")}<span><b>錯題回顧</b><small>${ready ? "有 " + ready + " 題到期" : "目前沒有到期錯題"}</small></span>${icon("chevron")}</a>
+      <a href="#settings" class="side-link">${icon("bell")}<span><b>學習設定</b><small>選主題、設定提醒或備份紀錄</small></span>${icon("chevron")}</a>
+    </aside>
+    <section class="foundation-courses"><div class="section-head"><h2>基礎加練</h2></div>
+      <div class="tiles">${Object.keys(tracks).filter((key) => !workTracks[key]).map(courseCard).join("")}</div>
+    </section>
+  </div>`;
 }
-function innerHead(title, desc, back = "#map", backText = "學習地圖") {
+function innerHead(title, desc, back = "#map", backText = "練習首頁") {
   return `<a class="back" href="${esc(back)}">‹ ${esc(backText)}</a><h1>${esc(title)}</h1>${desc ? `<p class="sub">${esc(desc)}</p>` : ""}`;
 }
 function trackPage(key) {
@@ -237,41 +266,148 @@ function trackPage(key) {
  ${isWord ? `<div class="track-tools"><button data-do="lookup">${icon("search")} 查找單字</button>${total ? `<label>關卡範圍 <select id="batch-page">${Array.from({ length: Math.ceil(total / size) }, (_, i) => `<option value="${i}" ${i * size === first ? "selected" : ""}>${i * size + 1}–${Math.min(total, (i + 1) * size)} 關</option>`).join("")}</select></label>` : ""}</div>${bankError ? '<p role="alert">字庫載入失敗。<button data-do="retry-bank">重新載入</button></p>' : ""}` : ""}
  <div class="lesson-list">${list.map((l, i) => `<a href="#lesson/${esc(l.id)}"><span class="node ${state.cleared[l.id] ? "cleared" : ""}">${state.cleared[l.id] ? icon("check") : first + i + 1}</span><span><b>${esc(l.title)}</b><small>${esc(isWord ? l.questions.map((q) => q.word).join(" · ") : l.summary)}</small></span><span class="level">${esc(l.level)}</span>${icon("chevron")}</a>`).join("")}</div></div>`;
 }
-function intro(l) {
-  const v = l.track === "vocabulary";
-  return `<div class="inner ${tracks[l.track].color}">${innerHead(l.title, l.summary, "#track/" + l.track, tracks[l.track].title)}
- <div class="study-card"><div class="section-head"><h2>${icon("book")} 闖關前先讀</h2><span>${esc(l.level)}</span></div><p class="guide lookup-zone">${esc(l.guide)}</p>
- ${v ? `<div class="study-words">${l.questions.map((q) => `<div><button class="text-btn" data-do="word" data-value="${esc(q.word)}">${esc(q.word)}</button><span>${esc(q.choices[q.answer])}</span><button class="icon-btn" data-do="say" data-value="${esc(q.word)}" aria-label="${esc(q.word)} 發音">${icon("volume")}</button></div>`).join("")}</div>` : ""}
- <p class="muted">共 ${l.questions.length} 題，答對八成即可通關。每答對一題獲得 10 XP。</p><button class="button primary" data-do="start" data-value="${esc(l.id)}">${icon("play")} 開始挑戰</button></div></div>`;
+function phrases(unit) {
+  return `<div class="phrase-list">${unit.phrases.map(([term, meaning, example]) =>
+    `<div class="phrase-row"><div><b lang="en">${esc(term)}</b><p>${esc(meaning)}</p><p class="phrase-example" lang="en">${esc(example)}</p></div>
+      <button type="button" class="icon-btn" data-do="say" data-value="${esc(example)}" aria-label="${esc("朗讀例句 " + term)}">${icon("volume")}</button></div>`,
+  ).join("")}</div>`;
+}
+function intro(unit) {
+  const vocabulary = unit.track === "vocabulary";
+  return `<div class="inner ${tracks[unit.track].color}">${innerHead(unit.title, unit.summary, "#track/" + unit.track, tracks[unit.track].title)}
+    <div class="study-card"><div class="section-head"><h2>${icon("book")} ${unit.phrases ? "先看用法" : "闖關前先讀"}</h2><span>${esc(unit.level)}</span></div><p class="guide lookup-zone">${esc(unit.guide)}</p>
+      ${unit.phrases ? phrases(unit) : ""}
+      ${vocabulary ? `<div class="study-words">${unit.questions.map((q) => `<div><button class="text-btn" data-do="word" data-value="${esc(q.word)}">${esc(q.word)}</button><span>${esc(q.choices[q.answer])}</span><button class="icon-btn" data-do="say" data-value="${esc(q.word)}" aria-label="${esc(q.word)} 發音">${icon("volume")}</button></div>`).join("")}</div>` : ""}
+      <p class="muted">共 ${unit.questions.length} 題，答對八成即可通關。每答對一題獲得 10 XP。</p>
+      <div class="actions unit-actions"><button class="button primary" data-do="start" data-value="${esc(unit.id)}">${icon("play")} 開始挑戰</button>${unit.writing ? `<a href="#writing/${esc(unit.id)}" class="button">${icon("edit")} 寫一句英文</a>` : ""}</div>
+    </div></div>`;
+}
+function writingPage(id) {
+  const unit = byLesson.get(id);
+  if (!unit?.writing)
+    return `<div class="inner">${innerHead("找不到這個寫作練習", "", "#library", "句型教材")}</div>`;
+  const saved = state.notes["write:" + unit.id];
+  const { prompt, example, checklist } = unit.writing;
+  return `<div class="inner">${innerHead("寫一句英文", unit.title, "#lesson/" + unit.id, "回到教材")}
+    <section class="study-card">
+      <form id="writing-form" data-lesson="${esc(unit.id)}">
+        <label class="writing-prompt" for="writing-answer">${esc(prompt)}</label>
+        <textarea id="writing-answer" rows="5" maxlength="8000" lang="en" required placeholder="Write your answer here…">${esc(saved?.body)}</textarea>
+        <div class="actions"><button class="button primary" type="submit">存成筆記</button><a class="ext" href="#notes">查看我的筆記</a></div>
+      </form>
+      <details class="answer-example"><summary>看範例與自評提示</summary>
+        <p class="lookup-zone" lang="en">${esc(example)}</p>
+        <button class="button" data-do="say" data-value="${esc(example)}">${icon("volume")} 朗讀範例</button>
+        <p>${esc(checklist)}</p>
+      </details></section></div>`;
+}
+function library() {
+  return `<div class="inner">${innerHead("工作英文教材", "找片語、看例句，也能把同一個工作情境寫成自己的英文。")}
+    <div class="phrase-tools">
+      <label>搜尋句型<input id="phrase-search" type="search" placeholder="輸入英文或中文，例如卡關"></label>
+      <label>主題<select id="phrase-track"><option value="all">全部主題</option>${Object.entries(workTracks).map(([id, track]) => `<option value="${id}">${esc(track.title)}</option>`).join("")}</select></label>
+    </div>
+    <p id="phrase-count" class="muted" role="status">${workLessons.flatMap((unit) => unit.phrases).length} 個句型</p>
+    <div class="phrase-library">${workLessons.map((unit) =>
+      `<section class="study-card phrase-set ${tracks[unit.track].color}" data-track="${unit.track}">
+        <div class="section-head"><h2>${esc(unit.title)}</h2><span>${esc(tracks[unit.track].title)}</span></div>
+        ${phrases(unit)}
+        <div class="actions"><a class="ext" href="#lesson/${unit.id}">前往練習</a><a class="ext" href="#writing/${unit.id}">寫一句英文</a></div>
+      </section>`).join("")}</div></div>`;
+}
+function filterPhrases() {
+  const term = $("#phrase-search").value.trim().toLowerCase();
+  const topic = $("#phrase-track").value;
+  let total = 0;
+  for (const section of main.querySelectorAll(".phrase-set")) {
+    const topicMatches = topic === "all" || section.dataset.track === topic;
+    const headingMatches = section.querySelector("h2").textContent.toLowerCase().includes(term);
+    let count = 0;
+    for (const phrase of section.querySelectorAll(".phrase-row")) {
+      const matches = topicMatches && (headingMatches || phrase.textContent.toLowerCase().includes(term));
+      phrase.hidden = !matches;
+      if (matches) count++;
+    }
+    section.hidden = count === 0;
+    total += count;
+  }
+  $("#phrase-count").textContent = total ? total + " 個句型" : "找不到相符的句型，試試其他關鍵字或主題。";
+}
+function settings() {
+  const days = Object.entries(state.days).filter(([, day]) => day.answers > 0).sort(([a], [b]) => b.localeCompare(a));
+  return `<div class="inner settings">${innerHead("學習設定", "調整每日練習，並查看或帶走目前瀏覽器的學習資料。")}
+    <section class="study-card"><h2>每日練習主題</h2>
+      <label for="focus-track">優先練習</label>
+      <select id="focus-track">${Object.entries(focusOptions).map(([id, label]) => `<option value="${id}" ${state.prefs.focus === id ? "selected" : ""}>${esc(label)}</option>`).join("")}</select>
+      <p class="muted">每天最多先排兩題到期的工作英文錯題，其餘依主題挑選。已開始的每日練習會保留。</p>
+    </section>
+    <section class="study-card"><h2>每日提醒</h2>
+      <label for="reminder-time">開始時間（台灣時間）</label>
+      <input id="reminder-time" type="time" required value="${esc(state.prefs.reminderTime)}">
+      <p class="muted">下載後匯入行事曆，再確認活動已開啟通知。使用 Google 日曆時，請先在電腦匯入。</p>
+      <button type="button" class="button primary" data-do="calendar">${icon("bell")} 下載每日提醒 .ics</button>
+    </section>
+    <section class="study-card"><h2>學習紀錄與備份</h2>
+      <p class="muted">題目進度、錯題、筆記和設定存在目前的瀏覽器。換裝置時可用 JSON 備份還原。</p>
+      ${days.length ? `<table class="study-history"><caption>最近 ${Math.min(days.length, 7)} 個練習日</caption><thead><tr><th scope="col">日期</th><th scope="col">作答</th><th scope="col">答對</th></tr></thead><tbody>${days.slice(0, 7).map(([date, d]) => `<tr><th scope="row">${esc(date)}</th><td>${fmt(d.answers)}</td><td>${fmt(d.correct)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">開始作答後，這裡會顯示練習日期和題數。</p>'}
+      <div class="actions"><button class="button" data-do="export-backup">匯出學習資料</button><button class="button" data-do="pick-backup">匯入備份</button><input type="file" id="backup-file" accept=".json,application/json" hidden></div>
+    </section></div>`;
+}
+function roundBack(active) {
+  if (active.track === "daily") return ["#map", "今日練習"];
+  if (active.track === "review") return ["#review", "錯題回顧"];
+  return ["#track/" + active.track, tracks[active.track].title];
+}
+function resultPage(active) {
+  const [href, label] = roundBack(active);
+  const writingUnit = active.ids.map((id) => byQuestion.get(id)?.lesson).find((unit) => unit?.writing);
+  return `<div class="inner"><div class="result"><span class="medal">${icon("trophy")}</span>
+    <h1>${active.track === "daily" ? "今日練習完成" : active.score === active.ids.length ? "全題答對！" : active.score * 5 >= active.ids.length * 4 ? "挑戰成功！" : "完成練習！"}</h1>
+    ${active.track === "daily" ? "" : `<p>${esc(active.title)}</p>`}
+    <div class="result-score">${active.score} <small>/ ${active.ids.length} 題</small></div>
+    <b>本次獲得 ${active.score * 10} XP</b>
+    <div class="actions"><a class="button primary" href="${href}">回到${esc(label)}</a>
+      ${writingUnit ? `<a class="button" href="#writing/${writingUnit.id}">${icon("edit")} 寫一句英文</a>` : Object.keys(state.mistakes).length && active.track !== "review" ? '<a class="button" href="#review">複習錯題</a>' : ""}
+    </div></div></div>`;
 }
 function quiz() {
   const a = state.active;
   if (!a)
     return `<div class="inner">${innerHead("選擇一個關卡", "從學習地圖選擇想練習的主題。")}<a class="button primary" href="#map">前往地圖</a></div>`;
-  if (a.finished)
-    return `<div class="inner"><div class="result"><span class="medal">${icon("trophy")}</span><h1>${a.score === a.ids.length ? "全題答對！" : a.score * 5 >= a.ids.length * 4 ? "挑戰成功！" : "完成練習！"}</h1><p>${esc(a.title)}</p><div class="result-score">${a.score} <small>/ ${a.ids.length} 題</small></div><b>本次獲得 ${a.score * 10} XP</b><div class="actions"><a class="button primary" href="#${a.track === "review" ? "review" : "track/" + a.track}">回到${a.track === "review" ? "錯題回顧" : "學習區域"}</a>${Object.keys(state.mistakes).length ? '<a class="button" href="#review">複習錯題</a>' : '<a class="button" href="#map">學習地圖</a>'}</div></div></div>`;
+  if (a.finished) return resultPage(a);
   const found = findQuestion(a.ids[a.index]);
   if (!found)
     return `<div class="inner">${innerHead("題目暫時無法載入", "重新載入字庫後可繼續。")}<button data-do="retry-bank">重新載入</button></div>`;
   const { q } = found,
     answered = a.selected !== null,
     good = answered && a.selected === q.answer;
-  return `<div class="inner quiz">${innerHead(a.title, "", a.track === "review" ? "#review" : "#track/" + a.track, a.track === "review" ? "錯題回顧" : tracks[a.track].title)}
+  const [backHref, backText] = roundBack(a);
+  return `<div class="inner quiz">${innerHead(a.title, "", backHref, backText)}
  <div class="quiz-progress"><span>第 ${a.index + 1} / ${a.ids.length} 題</span><b>${a.score * 10} XP</b></div>${progress(a.index + (answered ? 1 : 0), a.ids.length)}
  <section class="study-card"><div class="question-meta"><span>${esc(tracks[found.lesson.track].type)}挑戰</span><button data-do="question-note">${icon("edit")} 筆記</button></div>
- ${q.transcript ? '<div class="listen"><button class="button primary" data-do="listen">' + icon("volume") + ' 播放音檔</button><button data-do="slow">慢速 0.8×</button></div>' : ""}
+ ${q.transcript ? `<div class="listen"><button class="button primary" data-do="listen">${icon("volume")} ${q.work ? "播放英文" : "播放音檔"}</button><button data-do="slow">慢速 0.8×</button></div>` : ""}
+ ${q.transcript && q.work && !answered ? `<details class="listen-transcript"><summary>以文字閱讀</summary><p class="lookup-zone" lang="en">${esc(q.transcript)}</p></details>` : ""}
  <h2 class="question lookup-zone" lang="en">${esc(q.prompt)}</h2>${q.word ? `<button class="say" data-do="say" data-value="${esc(q.word)}">${icon("volume")} 聽發音</button>` : ""}
  <div class="answers">${q.choices.map((c, i) => `<button class="answer lookup-zone ${answered ? (i === q.answer ? "right" : i === a.selected ? "wrong" : "") : chosen === i ? "chosen" : ""}" data-do="choice" data-value="${i}" aria-pressed="${chosen === i || a.selected === i}" ${answered ? "disabled" : ""}><span>${String.fromCharCode(65 + i)}</span>${esc(c)}</button>`).join("")}</div>
  ${answered ? `<div class="feedback ${good ? "good" : "bad"}" role="status"><b>${good ? "答對了！ +10 XP" : "已加入錯題回顧"}</b><p class="lookup-zone">${esc(q.explanation)}</p>${q.transcript ? `<details><summary>查看聽力逐字稿</summary><p class="lookup-zone" lang="en">${esc(q.transcript)}</p></details>` : ""}</div><button class="button primary" data-do="next">${a.index + 1 === a.ids.length ? "查看結果" : "下一題"}</button>` : `<button class="button primary" data-do="submit" ${chosen === null ? "disabled" : ""}>確認答案</button>`}</section>
  <p class="tip">${icon("search")} 反白英文單字即可查字典，也可以用頁首的放大鏡查詢。</p></div>`;
 }
 function review() {
-  const rows = Object.entries(state.mistakes)
-    .sort((a, b) => b[1].date - a[1].date)
-    .map(([id, m]) => ({ id, m, found: findQuestion(id) }))
-    .filter((x) => x.found);
-  return `<div class="inner">${innerHead("錯題回顧", "答錯的題目會留在這裡，重新答對即可移出。")}
- ${rows.length ? `<div class="track-tools"><b>${rows.length} 題待複習</b><button class="button primary" data-do="review">${icon("play")} 練習 ${Math.min(rows.length, 5)} 題</button></div><div class="review-list">${rows.map(({ id, m, found }) => `<article><small>${esc(found.lesson.title)} · 答錯 ${m.count} 次</small><h3 class="lookup-zone">${esc(found.q.prompt)}</h3><button data-do="single" data-value="${esc(id)}">重練這題</button></article>`).join("")}</div>` : `<div class="empty">${icon("check")}<h2>目前沒有待複習的題目</h2><a href="#map" class="button primary">前往學習地圖</a></div>`}</div>`;
+  const today = dayKey();
+  const rows = reviewQueue(state, { includeScheduled: true })
+    .map((id) => ({ id, m: state.mistakes[id], found: findQuestion(id) }))
+    .filter((entry) => entry.found);
+  const ready = rows.filter(({ m }) => !m.due || m.due <= today).length;
+  return `<div class="inner">${innerHead("錯題回顧", "工作英文錯題在隔天安排複習，到期答對後再間隔 3 天與 7 天。")}
+    ${rows.length ? `<div class="track-tools"><b>${ready} 題到期 · ${rows.length - ready} 題已排程</b>${ready ? `<button class="button primary" data-do="review">${icon("play")} 複習 ${Math.min(ready, 5)} 題</button>` : ""}</div>
+      <div class="review-list">${rows.map(({ id, m, found }) => {
+        const { q, lesson: unit } = found;
+        const status = !m.due || m.due <= today ? "可複習" : m.due + " 到期";
+        return `<article><small>${esc(unit.title)} · 答錯 ${m.count} 次 · ${esc(status)}</small><h3 class="lookup-zone" lang="en">${esc(q.prompt)}</h3>
+          <details class="review-answer"><summary>看上次錯答與解析</summary><p>上次錯答 <strong>${esc(q.choices[m.choice] || "未記錄")}</strong></p><p>正確答案 <strong>${esc(q.choices[q.answer])}</strong></p><p>${esc(q.explanation)}</p></details>
+          <button data-do="single" data-value="${esc(id)}">重練這題</button></article>`;
+      }).join("")}</div>` : `<div class="empty">${icon("check")}<h2>目前沒有待複習的題目</h2><a href="#map" class="button primary">前往練習</a></div>`}
+    </div>`;
 }
 function notebook() {
   const rows = Object.entries(state.notes).sort(
@@ -282,51 +418,45 @@ function notebook() {
 function render() {
   const [view, part] = route().split("/");
   header();
-  const l = view === "lesson" && findLesson(part || "");
-  const output =
-    view === "track"
-      ? trackPage(part)
-      : view === "lesson"
-        ? l
-          ? intro(l)
-          : `<div class="inner">${innerHead("找不到關卡", "請回到學習地圖選擇關卡。")}</div>`
-        : view === "play"
-          ? quiz()
-          : view === "review"
-            ? review()
-            : view === "notes"
-              ? notebook()
-              : home();
-  main.innerHTML = output;
-  document.title =
-    (main.querySelector("h1")?.textContent || "英文練習") + "｜FluentPath";
+  const unit = view === "lesson" && findLesson(part || "");
+  const pages = {
+    map: home,
+    track: () => trackPage(part),
+    lesson: () => unit ? intro(unit) : `<div class="inner">${innerHead("找不到關卡", "請回到練習首頁選擇關卡。")}</div>`,
+    play: quiz,
+    review,
+    notes: notebook,
+    library,
+    writing: () => writingPage(part),
+    settings,
+  };
+  main.innerHTML = (Object.hasOwn(pages, view) ? pages[view] : home)();
+  renderedDay = dayKey();
+  document.title = (main.querySelector("h1")?.textContent || "英文練習") + "｜FluentPath";
 }
-function start(track, title, lessonId, ids) {
-  if (
-    state.active &&
-    !state.active.finished &&
-    state.active.lessonId === lessonId &&
-    track !== "review"
-  ) {
+function start(track, title, lessonId, ids, plan = null) {
+  if (!ids.length) return;
+  const prior = state.active;
+  if (prior && !prior.finished && prior.lessonId === lessonId && track !== "review") {
     go("play");
     return;
   }
-  if (
-    state.active &&
-    !state.active.finished &&
-    !window.confirm(
-      "要切換挑戰嗎？已作答的 XP 與錯題會保留，目前這一關將重新開始。",
-    )
-  )
-    return;
-  if (!ids.length) return;
+  if (plan && plan.answers.length >= ids.length) return;
+  if (prior && !prior.finished) {
+    const message = prior.track === "daily"
+      ? "要切換練習嗎？今天已回答的題目會保留。"
+      : "要切換挑戰嗎？已作答的 XP 與錯題會保留，目前這一關將重新開始。";
+    if (!window.confirm(message)) return;
+  }
+  const answers = plan?.answers || [];
+  if (plan) state.dailyPlan = plan;
   state.active = {
     track,
     title,
     lessonId,
     ids,
-    index: 0,
-    score: 0,
+    index: answers.length,
+    score: answers.filter((choice, index) => byQuestion.get(ids[index])?.q.answer === choice).length,
     selected: null,
     finished: false,
   };
@@ -479,6 +609,36 @@ function noteEditor(key, title = "", body = "") {
     toast("已儲存學習筆記");
   };
 }
+function download(content, type, name) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+async function importBackup(file) {
+  if (file.size > 15_000_000) return toast("備份檔超過 15 MB。請選擇原始學習備份檔。");
+  let restored;
+  try {
+    restored = restoreBackup(await file.text());
+  } catch (error) {
+    return toast(error.message || "備份檔無法讀取。");
+  }
+  if (!window.confirm("匯入後會以備份內容取代目前瀏覽器的學習進度、錯題、筆記與設定。要繼續嗎？")) return;
+  try {
+    persist(restored);
+  } catch {
+    return toast("瀏覽器無法儲存備份，請檢查儲存空間後重試。");
+  }
+  Object.assign(state, restored);
+  chosen = null;
+  stopSpeaking();
+  render();
+  toast("已還原學習資料");
+}
 document.addEventListener("click", (e) => {
   const button = e.target.closest("[data-do]");
   if (!button) return;
@@ -492,13 +652,26 @@ document.addEventListener("click", (e) => {
   if (action === "sources")
     return panel(
       "教材與資料來源",
-      '<p>文法、多益職場題及聽力逐字稿由 FluentPath 原創。聽力使用合成英語語音錄製。</p><p><a href="./data/vocabulary-source.txt" target="_blank" rel="noopener">單字清單的選詞方式與授權</a></p><p>查字優先使用內建詞庫，另可使用 Free Dictionary API 英英釋義與 Cambridge 英漢詞典。</p>',
+      '<p>工作英文題、句型與範例，以及文法、多益職場題和聽力逐字稿，均由 FluentPath 原創。基礎聽力使用預錄音檔，工作英文使用裝置語音。</p><p><a href="./data/vocabulary-source.txt" target="_blank" rel="noopener">單字清單的選詞方式與授權</a></p><p>查字優先使用內建詞庫，另可使用 Free Dictionary API 英英釋義與 Cambridge 英漢詞典。</p>',
     );
+  if (action === "daily") {
+    const plan = dailyPractice(state);
+    return start("daily", "今日工作英文", "daily-" + plan.date, plan.ids, plan);
+  }
+  if (action === "calendar") {
+    const field = $("#reminder-time");
+    if (!field.reportValidity()) return;
+    return download(learningCalendar(field.value), "text/calendar;charset=utf-8", "fluentpath-daily.ics");
+  }
+  if (action === "export-backup") {
+    return download(backupText(state), "application/json;charset=utf-8", "fluentpath-" + dayKey() + ".json");
+  }
+  if (action === "pick-backup") return $("#backup-file").click();
   if (action === "retry-bank") return loadBank();
   if (action === "say") return speak(value).catch((e) => toast(e.message));
   if (action === "listen" || action === "slow") {
     if (q?.transcript)
-      speak(q.transcript, { id: q.id, slow: action === "slow" }).catch((e) =>
+      speak(q.transcript, { id: q.work ? undefined : q.id, slow: action === "slow" }).catch((e) =>
         toast(e.message),
       );
     return;
@@ -545,10 +718,7 @@ document.addEventListener("click", (e) => {
     const ids =
       action === "single"
         ? [value]
-        : Object.keys(state.mistakes)
-            .sort((a, b) => state.mistakes[b].date - state.mistakes[a].date)
-            .filter((id) => findQuestion(id))
-            .slice(0, 5);
+        : reviewQueue(state).filter((id) => findQuestion(id)).slice(0, 5);
     return start("review", "錯題回顧", "review", ids);
   }
   if (action === "new-note") return noteEditor("note:" + crypto.randomUUID());
@@ -563,12 +733,42 @@ document.addEventListener("click", (e) => {
     toast("已刪除筆記");
   }
 });
-main.addEventListener("change", (e) => {
-  if (e.target.id === "batch-page") {
-    batchPage = Number(e.target.value);
+main.addEventListener("change", (event) => {
+  const field = event.target;
+  if (field.id === "batch-page") {
+    batchPage = Number(field.value);
     render();
     $("#batch-page").focus();
   }
+  if (field.id === "phrase-track") filterPhrases();
+  if (field.id === "focus-track" && Object.hasOwn(focusOptions, field.value)) {
+    state.prefs.focus = field.value;
+    if (save()) toast("已儲存練習主題");
+  }
+  if (field.id === "reminder-time" && validReminderTime(field.value)) {
+    state.prefs.reminderTime = field.value;
+    if (save()) toast("已儲存提醒時間");
+  }
+  if (field.id === "backup-file" && field.files.length) {
+    const file = field.files[0];
+    field.value = "";
+    importBackup(file);
+  }
+});
+main.addEventListener("input", (event) => {
+  if (event.target.id === "phrase-search") filterPhrases();
+});
+main.addEventListener("submit", (event) => {
+  if (event.target.id !== "writing-form") return;
+  event.preventDefault();
+  const unit = byLesson.get(event.target.dataset.lesson);
+  const body = $("#writing-answer").value.trim();
+  if (!unit?.writing || !body) return toast("請先寫一段英文。");
+  state.notes["write:" + unit.id] = { title: unit.title + "｜寫作練習", body, date: Date.now() };
+  if (save()) toast("已存成學習筆記");
+});
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && renderedDay !== dayKey() && ["map", "review"].includes(route()) && !dialog.open) render();
 });
 let selectionTimer;
 function selectedLookup() {
@@ -645,7 +845,10 @@ async function loadBank() {
   } catch {
     bankError = true;
   }
-  render();
+  const current = route();
+  const activeId = state.active ? state.active.ids[state.active.index] : null;
+  if (current === "map" || current === "review" || current === "track/vocabulary" ||
+      current.startsWith("lesson/vocab-") || (current === "play" && activeId?.startsWith("word-"))) render();
 }
 render();
 loadBank();
